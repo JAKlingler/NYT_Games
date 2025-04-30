@@ -1,6 +1,8 @@
 import streamlit as st
 import sqlite3
+import pandas as pd
 from datetime import date
+import matplotlib.pyplot as plt
 
 # --- Setup DB ---
 def init_db():
@@ -22,10 +24,8 @@ def init_db():
 conn = init_db()
 
 # --- Title ---
-st.title("NYT Puzzle Scores")
+st.title("NYT Game Tracker")
 
-# --- Add New Daily Result ---
-#st.header("➕ Add Daily Winner")
 
 with st.form("daily_form"):
     play_date = st.date_input("Date", value=date.today())
@@ -42,6 +42,7 @@ with st.form("daily_form"):
         for result in [wordle, connections, mini, strands]:
             if result in scores:
                 scores[result] += 1
+
         # Determine daily winner
         winner = "Tie"
         if scores["Jake"] > scores["Hay"]:
@@ -75,14 +76,16 @@ recent = conn.execute('''
 ''').fetchall()
 
 if recent:
-    st.table(recent)
+    df_recent = pd.DataFrame(recent, columns=[
+        "Date", "Daily Winner", "Wordle", "Connections", "Mini Crossword", "Strands"
+    ])
+    st.table(df_recent)
 else:
     st.info("No results yet. Add one above!")
 
 # --- Streak Tracker ---
 st.header("🔥 Streaks")
 
-# Fetch all winners ordered by date
 rows = conn.execute('SELECT winner FROM daily_scores ORDER BY play_date').fetchall()
 winners = [r[0] for r in rows]
 
@@ -98,6 +101,35 @@ def calculate_streaks(winners, player):
     current = temp
     return current, longest
 
-for player in ["Me", "GF"]:
+for player in ["Jake", "Hay"]:
     current, longest = calculate_streaks(winners, player)
     st.markdown(f"**{player}** - Current Streak: 🔥 {current} | Longest Streak: 🏆 {longest}")
+
+# --- Game Stats ---
+st.header("📈 Puzzle Performance Comparison")
+
+# Fetch all results into DataFrame
+df = pd.read_sql_query('SELECT * FROM daily_scores ORDER BY play_date', conn)
+
+if not df.empty:
+    puzzle_types = ["wordle", "connections", "mini_crossword", "strands"]
+    stats = {puzzle: {"Jake": 0, "Hay": 0} for puzzle in puzzle_types}
+
+    for puzzle in puzzle_types:
+        counts = df[puzzle].value_counts()
+        for player in ["Jake", "Hay"]:
+            stats[puzzle][player] = counts.get(player, 0)
+
+    # Convert to DataFrame for plotting
+    plot_df = pd.DataFrame(stats).T
+
+    # Plot
+    st.subheader("Total Wins by Puzzle")
+    fig, ax = plt.subplots()
+    plot_df.plot(kind='bar', ax=ax)
+    ax.set_ylabel("Wins")
+    ax.set_xlabel("Puzzle Type")
+    ax.set_title("Jake vs. Hay - Puzzle Wins")
+    st.pyplot(fig)
+else:
+    st.info("Not enough data for charts yet.")
